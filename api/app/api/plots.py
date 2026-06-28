@@ -46,8 +46,9 @@ def create_plot(plot: PlotCreate, db: Session = Depends(get_db), current_user: U
         utm_geom = func.ST_Transform(func.ST_GeomFromGeoJSON(json.dumps(plot.geojson)), 32647)
 
         # Calculate area in square metres using the UTM projection (EPSG:32647)
+        from sqlalchemy import select as sa_select
         area_m2 = db.execute(
-            func.ST_Area(utm_geom).select()
+            sa_select(func.ST_Area(utm_geom))
         ).scalar()
 
         new_plot = Plot(

@@ -230,9 +230,14 @@ def test_extract_stats_accepts_explicit_feature_vector_path(tmp_path, monkeypatc
     }
     feature_file.write_text(json.dumps(feature_payload), encoding="utf-8")
 
-    fake_cursor = FakeCursor(row=(99,))
-    fake_cursor2 = FakeCursor()
-    fake_conn = FakeConnection(fake_cursor, fake_cursor2)
+    geojson_str = json.dumps({
+        "type": "Polygon",
+        "coordinates": [[[100.25, 16.81], [100.27, 16.81], [100.27, 16.83], [100.25, 16.83], [100.25, 16.81]]]
+    })
+    fake_cursor_geom = FakeCursor(row=(geojson_str,))   # cursor 0: geometry SELECT
+    fake_cursor_insert = FakeCursor(row=(99,))           # cursor 1: INSERT RETURNING id
+    fake_cursor_weather = FakeCursor()                   # cursor 2: ingest_weather_timeseries
+    fake_conn = FakeConnection(fake_cursor_geom, fake_cursor_insert, fake_cursor_weather)
 
     monkeypatch.setattr(extract_stats_module, "PROCESSED_DIR", processed_dir)
     monkeypatch.setattr(extract_stats_module.psycopg2, "connect", lambda _: fake_conn)
@@ -240,11 +245,12 @@ def test_extract_stats_accepts_explicit_feature_vector_path(tmp_path, monkeypatc
     result = extract_stats_module.main(str(feature_file))
 
     assert result == 99
-    query, params = fake_cursor.executed[0]
+    query, params = fake_cursor_insert.executed[0]
     assert "INSERT INTO plot_features" in query
-    assert params[0] == 1
-    assert params[8] == 45.2
-    assert params[22] == 0.15
+    assert params[0] == 1        # plot_id
+    assert params[8] == 45.2     # rain_7d_mm
+    assert params[14] == 4.5     # nearest_hotspot_km
+    assert params[15] == -0.45   # spi_30d
     updated_payload = json.loads(feature_file.read_text(encoding="utf-8"))
     assert updated_payload["indices"] == {"ndvi": 0.0, "ndmi": 0.0, "nbr": 0.0}
 
@@ -382,8 +388,10 @@ def test_create_plot_sqlalchemy():
     mock_result.plot_name = "Rice Field 1"
     mock_result.area_size = 1500.0
     mock_result.image_url = None
+    mock_result.crop = None
+    mock_result.address = None
     mock_result.geojson = '{"type": "Polygon", "coordinates": [[[100.5, 13.7], [100.6, 13.7], [100.6, 13.8], [100.5, 13.8], [100.5, 13.7]]]}'
-    
+
     mock_db.query.return_value.filter.return_value.first.return_value = mock_result
 
     def override_sqlalchemy_db():
@@ -456,16 +464,7 @@ def test_upload_profile_image_success():
     assert resp_data["name"] == "Test User Profile"
     assert resp_data["email"] == "profile_test@example.com"
     assert "profile_image_url" in resp_data
-    assert "static/uploads/profile_42" in resp_data["profile_image_url"]
-    
-    # Verify file was written to disk and then clean it up
-    import os
-    filename = resp_data["profile_image_url"].split("/")[-1]
-    file_path = os.path.join("static/uploads", filename)
-    assert os.path.exists(file_path)
-    try:
-        os.remove(file_path)
-    except OSError:
-        pass
+    # Without SUPABASE_KEY storage falls back to an inline base64 data URI
+    assert "data:image/jpeg;base64," in resp_data["profile_image_url"]
 
 

@@ -84,7 +84,6 @@ from app.api.auth import router as auth_router
 from app.api.plots import router as plots_router
 from app.api.notifications import router as notifications_router
 from app.services.alert_engine import run_alert_scan
-from app.services.ai_risk_sync import sync_ai_risk_scores
 from run_poc import main as run_pipeline
 from pipeline.utils.s3_client import download_from_s3, check_s3_file_exists
 
@@ -106,16 +105,6 @@ def scheduled_phase2_job():
     except Exception as e:
         logger.error(f"❌ Phase 2 pipeline failed: {str(e)}")
 
-    # Sync AI risk scores from DOH (server-to-server) so alert_engine has real data.
-    # Runs after fresh satellite data is available; gracefully skips if DOH_API_KEY unset.
-    try:
-        result = sync_ai_risk_scores()
-        logger.info(f"🤖 AI risk sync: {result}")
-    except Exception as e:
-        logger.error(f"❌ AI risk sync failed: {str(e)}")
-
-    # Fresh scores → re-scan for per-plot threats and push alerts (ระบบแจ้งเตือนอัจฉริยะ).
-    # Runs even if AI sync failed, so hotspot alerts still fire.
     try:
         result = run_alert_scan()
         logger.info(f"🔔 Alert scan: {result}")
@@ -134,12 +123,6 @@ def scheduled_startup_job():
         logger.info("✅ Startup ingestion pipeline completed successfully.")
     except Exception as e:
         logger.error(f"❌ Startup pipeline failed: {str(e)}")
-
-    try:
-        result = sync_ai_risk_scores()
-        logger.info(f"🤖 AI risk sync: {result}")
-    except Exception as e:
-        logger.error(f"❌ AI risk sync failed: {str(e)}")
 
     try:
         result = run_alert_scan()
@@ -295,23 +278,12 @@ def refresh_plot_render_cache():
                 ST_YMin(ST_Transform(p.geometry, 4326)),
                 ST_XMax(ST_Transform(p.geometry, 4326)),
                 ST_YMax(ST_Transform(p.geometry, 4326)),
-                r.fire_risk_score,
-                r.flood_risk_score,
-                r.drought_risk_score,
-                r.disease_risk_score,
                 pf.ndvi,
                 pf.ndmi,
                 pf.humidity_pct,
                 pf.wind_direction_deg,
                 pf.wind_speed_kmh
             FROM plots p
-            LEFT JOIN LATERAL (
-                SELECT fire_risk_score, flood_risk_score, drought_risk_score, disease_risk_score
-                FROM plot_risk_scores
-                WHERE plot_id = p.id
-                ORDER BY evaluated_at DESC
-                LIMIT 1
-            ) r ON TRUE
             LEFT JOIN LATERAL (
                 SELECT ndvi, ndmi, humidity_pct, wind_direction_deg, wind_speed_kmh
                 FROM plot_features
@@ -336,17 +308,12 @@ def refresh_plot_render_cache():
         for row in rows:
             (pid, uid, geom_wkt, centroid_wkt,
              bbox_west, bbox_south, bbox_east, bbox_north,
-             fire_risk, flood_risk, drought_risk, disease_risk,
              ndvi, ndmi, humidity_pct, wind_dir, wind_speed) = row
             new_cache[pid] = {
                 "user_id":      uid,
                 "geom_wkt":     geom_wkt,
                 "centroid_wkt": centroid_wkt,
                 "bbox":         (bbox_west, bbox_south, bbox_east, bbox_north),
-                "fire_risk":    float(fire_risk)    if fire_risk    is not None else 0.0,
-                "flood_risk":   float(flood_risk)   if flood_risk   is not None else 0.0,
-                "drought_risk": float(drought_risk) if drought_risk is not None else 0.0,
-                "disease_risk": float(disease_risk) if disease_risk is not None else 0.0,
                 "ndvi":         float(ndvi)         if ndvi         is not None else 0.5,
                 "ndmi":         float(ndmi)         if ndmi         is not None else 0.5,
                 "humidity_pct": float(humidity_pct) if humidity_pct is not None else 50.0,
@@ -404,15 +371,11 @@ async def lifespan(app: FastAPI):
             with conn.cursor() as cur:
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_plots_geometry ON plots USING GIST (geometry);")
                 cur.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_plot_risk_scores_plot_evaluated "
-                    "ON plot_risk_scores(plot_id, evaluated_at DESC);"
-                )
-                cur.execute(
                     "CREATE INDEX IF NOT EXISTS idx_plot_features_plot_timestamp "
                     "ON plot_features(plot_id, timestamp DESC);"
                 )
                 conn.commit()
-                logger.info("✅ Spatial and covering indexes on plots/risk_scores/features verified.")
+                logger.info("✅ Spatial and covering indexes on plots/features verified.")
         finally:
             db_pool.putconn(conn)
     except Exception as e:
@@ -552,51 +515,24 @@ def normalize_confidence(value: Any) -> Literal["high", "medium", "low"]:
     return mapping.get(raw_value, "low")
 
 
-def derive_hotspot_historical_density(burn_scar_recurrence: float) -> float:
-    """Proxy for historical fire density derived from burn_scar_recurrence.
-
-    The DB schema does not store a standalone `hotspot_historical_density` column;
-    this value is computed as `burn_scar_recurrence * 0.5` so the FE
-    FeatureVector.fire.hotspot_historical_density field is always populated.
-    If a real measurement becomes available, add the column to plot_features
-    and update PLOT_FEATURE_SELECT_COLUMNS + build_plot_feature_response.
-    """
-    return round(max(burn_scar_recurrence, 0.0) * 0.5, 4)
-
-
 # Ordered column list for SELECT from plot_features.
 # !! Keep row indices in sync with build_plot_feature_response() below !!
-# If you add a column here, also update build_plot_feature_response and
-# bump every subsequent row[N] reference.
 PLOT_FEATURE_SELECT_COLUMNS = """
-    plot_id,              -- row[0]
-    timestamp,            -- row[1]
-    data_freshness_days,  -- row[2]
-    cloud_cover_pct,      -- row[3]
-    confidence,           -- row[4]
-    ndvi,                 -- row[5]
-    ndmi,                 -- row[6]
-    nbr,                  -- row[7]
-    rain_7d_mm,           -- row[8]
-    rain_forecast_14d_mm, -- row[9]
-    temp_max_c,           -- row[10]
-    temp_min_c,           -- row[11]
-    humidity_pct,         -- row[12]
-    wind_speed_kmh,       -- row[13]
-    wind_direction_deg,   -- row[14]
-    elevation_m,          -- row[15]
-    slope_deg,            -- row[16]
-    aspect_deg,           -- row[17]
-    river_distance_m,     -- row[18]
-    hotspot_count_24h,    -- row[19]
-    hotspot_count_7d,     -- row[20]
-    nearest_hotspot_km,   -- row[21]
-    burn_scar_recurrence, -- row[22]
-    land_use_type,        -- row[23]
-    soil_water_capacity,  -- row[24]
-    spi_30d,              -- row[25]
-    spi_60d,              -- row[26]
-    spi_90d               -- row[27]
+    plot_id,            -- row[0]
+    timestamp,          -- row[1]
+    data_freshness_days,-- row[2]
+    cloud_cover_pct,    -- row[3]
+    confidence,         -- row[4]
+    ndvi,               -- row[5]
+    ndmi,               -- row[6]
+    nbr,                -- row[7]
+    rain_7d_mm,         -- row[8]
+    humidity_pct,       -- row[9]
+    wind_speed_kmh,     -- row[10]
+    hotspot_count_24h,  -- row[11]
+    hotspot_count_7d,   -- row[12]
+    nearest_hotspot_km, -- row[13]
+    spi_30d             -- row[14]
 """
 
 SUPPORTED_HISTORY_INDICES = {"ndvi", "ndmi", "nbr"}
@@ -611,34 +547,16 @@ class IndicesFeature(BaseModel):
 
 class WeatherFeature(BaseModel):
     rain_7d_mm: float
-    rain_forecast_14d_mm: float
-    temp_max_c: float
-    temp_min_c: float
     humidity_pct: float
     wind_speed_kmh: float
-    wind_direction_deg: float
-
-class TerrainFeature(BaseModel):
-    elevation_m: float
-    slope_deg: float
-    aspect_deg: float
-    river_distance_m: float
 
 class FireFeature(BaseModel):
     hotspot_count_24h: int
     hotspot_count_7d: int
     nearest_hotspot_km: float
-    burn_scar_recurrence: float
-    hotspot_historical_density: float
-
-class SoilFeature(BaseModel):
-    land_use_type: str
-    soil_water_capacity: float
 
 class SPIFeature(BaseModel):
     spi_30d: float
-    spi_60d: float
-    spi_90d: float
 
 
 ConfidenceLevel = Literal["high", "medium", "low"]
@@ -652,9 +570,7 @@ class PlotFeatureResponse(BaseModel):
     confidence: ConfidenceLevel
     indices: IndicesFeature
     weather: WeatherFeature
-    terrain: TerrainFeature
     fire: FireFeature
-    soil: SoilFeature
     spi: SPIFeature
 
 
@@ -698,7 +614,6 @@ class HotspotCollection(BaseModel):
 
 def build_plot_feature_response(row: Sequence[Any]) -> PlotFeatureResponse:
     """Map a plot_features row into the nested API contract."""
-    burn_scar_recurrence = safe_float(row[22])
     return PlotFeatureResponse(
         plot_id=format_plot_id(safe_int(row[0])),
         timestamp=row[1],
@@ -712,34 +627,16 @@ def build_plot_feature_response(row: Sequence[Any]) -> PlotFeatureResponse:
         ),
         weather=WeatherFeature(
             rain_7d_mm=safe_float(row[8]),
-            rain_forecast_14d_mm=safe_float(row[9]),
-            temp_max_c=safe_float(row[10]),
-            temp_min_c=safe_float(row[11]),
-            humidity_pct=safe_float(row[12]),
-            wind_speed_kmh=safe_float(row[13]),
-            wind_direction_deg=safe_float(row[14]),
-        ),
-        terrain=TerrainFeature(
-            elevation_m=safe_float(row[15]),
-            slope_deg=safe_float(row[16]),
-            aspect_deg=safe_float(row[17]),
-            river_distance_m=safe_float(row[18]),
+            humidity_pct=safe_float(row[9]),
+            wind_speed_kmh=safe_float(row[10]),
         ),
         fire=FireFeature(
-            hotspot_count_24h=safe_int(row[19]),
-            hotspot_count_7d=safe_int(row[20]),
-            nearest_hotspot_km=safe_float(row[21], default=999.0),
-            burn_scar_recurrence=burn_scar_recurrence,
-            hotspot_historical_density=derive_hotspot_historical_density(burn_scar_recurrence),
-        ),
-        soil=SoilFeature(
-            land_use_type=row[23] if row[23] else "rice_paddy",
-            soil_water_capacity=safe_float(row[24], default=0.45),
+            hotspot_count_24h=safe_int(row[11]),
+            hotspot_count_7d=safe_int(row[12]),
+            nearest_hotspot_km=safe_float(row[13], default=999.0),
         ),
         spi=SPIFeature(
-            spi_30d=safe_float(row[25]),
-            spi_60d=safe_float(row[26]),
-            spi_90d=safe_float(row[27]),
+            spi_30d=safe_float(row[14]),
         ),
     )
 

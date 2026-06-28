@@ -16,7 +16,6 @@ CREATE TABLE IF NOT EXISTS users (
     role VARCHAR(50) DEFAULT 'farmer',
     subscription_tier VARCHAR(50) DEFAULT 'free',
     line_user_id VARCHAR(255),
-    fcm_token VARCHAR(255),
     profile_image_url VARCHAR(512),
     phone VARCHAR(20),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -71,33 +70,17 @@ CREATE TABLE plot_features (
 
     -- Weather
     rain_7d_mm NUMERIC(8,2),
-    rain_forecast_14d_mm NUMERIC(8,2),
-    temp_max_c NUMERIC(5,2),
-    temp_min_c NUMERIC(5,2),
     humidity_pct NUMERIC(5,2),
     wind_speed_kmh NUMERIC(5,2),
-    wind_direction_deg NUMERIC(5,2),
-
-    -- Terrain (static, but stored per record for convenience)
-    elevation_m NUMERIC(8,2),
-    slope_deg NUMERIC(5,2),
-    aspect_deg NUMERIC(5,2),
-    river_distance_m NUMERIC(10,2),
+    wind_direction_deg NUMERIC(5,2),      -- used by tile renderer for wind icons
 
     -- Fire
     hotspot_count_24h INTEGER DEFAULT 0,
     hotspot_count_7d INTEGER DEFAULT 0,
     nearest_hotspot_km NUMERIC(8,2),
-    burn_scar_recurrence NUMERIC(5,4),
-
-    -- Soil
-    land_use_type VARCHAR(50),
-    soil_water_capacity NUMERIC(5,4),
 
     -- SPI
     spi_30d NUMERIC(6,3),
-    spi_60d NUMERIC(6,3),
-    spi_90d NUMERIC(6,3),
 
     created_at TIMESTAMP DEFAULT NOW()
 );
@@ -179,24 +162,7 @@ CREATE TABLE plot_cyclone_impacts (
 CREATE INDEX idx_plot_cyclones ON plot_cyclone_impacts(plot_id);
 
 -- ============================================
--- 8. Plot Risk Scores (คะแนนความเสี่ยง 4 ภัย)
--- ============================================
-CREATE TABLE plot_risk_scores (
-    id SERIAL PRIMARY KEY,
-    plot_id INTEGER REFERENCES plots(id) ON DELETE CASCADE,
-    evaluated_at TIMESTAMP NOT NULL,
-    fire_risk_score NUMERIC(5,4),
-    flood_risk_score NUMERIC(5,4),
-    drought_risk_score NUMERIC(5,4),
-    disease_risk_score NUMERIC(5,4),
-    confidence_level VARCHAR(10),
-    created_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE INDEX idx_risk_scores_plot_time ON plot_risk_scores(plot_id, evaluated_at);
-
--- ============================================
--- 9. Notifications (ระบบแจ้งเตือนอัจฉริยะ — per-user alert inbox)
+-- 8. Notifications (ระบบแจ้งเตือนอัจฉริยะ — per-user alert inbox)
 -- ============================================
 CREATE TABLE IF NOT EXISTS notifications (
     id SERIAL PRIMARY KEY,

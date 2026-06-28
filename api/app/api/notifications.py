@@ -9,7 +9,6 @@ from app.models.domain import User, Notification
 from app.schemas.domain import NotificationResponse
 from app.services.dispatch import dispatch_to_channels
 from app.services.alert_engine import run_alert_scan
-from app.services.ai_risk_sync import sync_ai_risk_scores
 
 from app.docs.descriptions import NOTIFICATION_SEND_DESC
 
@@ -63,17 +62,17 @@ def list_notifications(
 @router.post(
     "/send",
     status_code=status.HTTP_202_ACCEPTED,
-    summary="Broadcast multi-channel notification alert",
+    summary="Broadcast notification alert via LINE",
     description=NOTIFICATION_SEND_DESC,
     responses={
         status.HTTP_202_ACCEPTED: {
-            "description": "Alert persisted and dispatched to each target user's configured channels.",
+            "description": "Alert persisted and dispatched to each target user's LINE account.",
             "content": {
                 "application/json": {
                     "example": {
                         "status": "success",
                         "message": "Notification queued for 3 users.",
-                        "channels": ["LINE", "Firebase Push"],
+                        "channels": ["LINE"],
                     }
                 }
             },
@@ -89,7 +88,7 @@ def send_notification(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Persist a notification per target user and dispatch to LINE + Firebase."""
+    """Persist a notification per target user and dispatch via LINE."""
     all_channels: set[str] = set()
     delivered = 0
     for uid in req.target_users:
@@ -104,7 +103,7 @@ def send_notification(
             severity="info",
         )
         db.add(note)
-        channels = dispatch_to_channels(target.line_user_id, target.fcm_token, req.title, req.message)
+        channels = dispatch_to_channels(target.line_user_id, req.title, req.message)
         note.channels = ",".join(channels) if channels else None
         all_channels.update(channels)
         delivered += 1
@@ -113,7 +112,7 @@ def send_notification(
     return {
         "status": "success",
         "message": f"Notification queued for {delivered} users.",
-        "channels": sorted(all_channels) if all_channels else ["LINE", "Firebase Push"],
+        "channels": sorted(all_channels) if all_channels else [],
     }
 
 
@@ -173,12 +172,11 @@ def delete_notification(
 @router.post(
     "/run-alert-scan",
     status_code=status.HTTP_200_OK,
-    summary="Run the intelligent alert engine (server-side trigger)",
+    summary="Run the hotspot alert engine (server-side trigger)",
     description=(
-        "Scans every plot for near-real-time threats (hotspot inside the 30 m buffer, and "
-        "AI risk scores crossing the danger threshold) and raises deduped alerts to plot "
-        "owners via LINE + Firebase. Normally invoked by the hourly scheduler; exposed here "
-        "for manual/cron triggering. Idempotent within a day per plot+hazard."
+        "Scans every plot for VIIRS hotspots within the 30 m buffer and raises deduped alerts "
+        "to plot owners via LINE. Normally invoked by the hourly scheduler; exposed here for "
+        "manual/cron triggering. Idempotent within a day per plot+hazard."
     ),
     responses={
         status.HTTP_200_OK: {
@@ -190,29 +188,3 @@ def delete_notification(
 def trigger_alert_scan(current_user: User = Depends(get_current_user)):
     """Manually trigger the alert engine (the same job the scheduler runs hourly)."""
     return run_alert_scan()
-
-
-@router.post(
-    "/run-ai-sync",
-    status_code=status.HTTP_200_OK,
-    summary="Sync AI risk scores from DOH into plot_risk_scores (server-to-server)",
-    description=(
-        "Calls DOH /v1/risk-score for every registered plot using the stored GeoJSON geometry "
-        "and writes the four per-hazard scores into plot_risk_scores. The alert engine then "
-        "picks up the fresh scores on its next run. Normally invoked by the hourly scheduler "
-        "(after pipeline ingestion); exposed here for on-demand triggering."
-    ),
-    responses={
-        status.HTTP_200_OK: {
-            "description": "Sync completed.",
-            "content": {
-                "application/json": {
-                    "example": {"status": "success", "synced": 5, "failed": 0}
-                }
-            },
-        },
-    },
-)
-def trigger_ai_sync(current_user: User = Depends(get_current_user)):
-    """Manually trigger the DOH AI risk score sync (the same step the scheduler runs)."""
-    return sync_ai_risk_scores()

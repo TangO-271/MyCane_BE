@@ -14,7 +14,6 @@ class User(Base):
     role = Column(String(50), default="farmer")
     subscription_tier = Column(String(50), default="free")
     line_user_id = Column(String(255), nullable=True)
-    fcm_token = Column(String(255), nullable=True)
     profile_image_url = Column(Text, nullable=True)
     phone = Column(String(20), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
@@ -35,22 +34,6 @@ class Plot(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     owner = relationship("User", back_populates="plots")
-    risk_scores = relationship("RiskScore", back_populates="plot", cascade="all, delete-orphan")
-
-class RiskScore(Base):
-    __tablename__ = "plot_risk_scores"
-
-    id = Column(Integer, primary_key=True, index=True)
-    plot_id = Column(Integer, ForeignKey("plots.id", ondelete="CASCADE"))
-    fire_risk = Column(Float, name="fire_risk_score")
-    flood_risk = Column(Float, name="flood_risk_score")
-    drought_risk = Column(Float, name="drought_risk_score")
-    disease_risk = Column(Float, name="disease_risk_score")
-    confidence_score = Column(String(10), name="confidence_level")
-    scored_at = Column(DateTime, name="evaluated_at", server_default=func.now())
-    created_at = Column(DateTime, server_default=func.now())
-
-    plot = relationship("Plot", back_populates="risk_scores")
 
 class Notification(Base):
     __tablename__ = "notifications"

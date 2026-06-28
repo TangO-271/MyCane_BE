@@ -347,7 +347,6 @@ def main(phase1=True, phase2=True):
         from pipeline.ingestion.fetch_weather import main as fetch_openmeteo_weather
         from pipeline.ingestion.fetch_tmd_weather import main as fetch_tmd_weather
         from pipeline.ingestion.fetch_burn_scars import main as fetch_fire_features
-        from pipeline.ingestion.fetch_dem_soil import main as fetch_dem_soil
         from pipeline.zonal_stats.extract_stats import main as extract_stats
 
         from concurrent.futures import ThreadPoolExecutor
@@ -385,9 +384,6 @@ def main(phase1=True, phase2=True):
                 # Step 3: Fire & Hotspots (NASA FIRMS)
                 fire_features = run_step(f"Fire & Hotspot Features (NASA FIRMS) for {plot_name}", fetch_fire_features)
 
-                # Step 4: DEM & Soil
-                dem_soil_features = run_step(f"DEM & Soil Features for {plot_name}", fetch_dem_soil)
-
                 # Look up Sentinel-2 data from Phase 1
                 tile_key = get_tile_key_for_plot(lat, lon)
                 scene_info = tile_scenes.get(tile_key)
@@ -414,50 +410,29 @@ def main(phase1=True, phase2=True):
                 else:
                     confidence_level = "low"
 
-                # Combine weather features
+                # Combine weather features (only the fields stored in plot_features)
                 weather_combined = {}
                 spi_data = {}
                 if openmeteo_features:
                     weather_combined["wind_speed_kmh"] = openmeteo_features.get("wind_speed_kmh", 0.0)
                     weather_combined["wind_direction_deg"] = openmeteo_features.get("wind_direction_deg", 0.0)
-                    spi_data = {
-                        "spi_30d": openmeteo_features.get("spi_30d", 0.0),
-                        "spi_60d": openmeteo_features.get("spi_60d", 0.0),
-                        "spi_90d": openmeteo_features.get("spi_90d", 0.0),
-                    }
+                    spi_data = {"spi_30d": openmeteo_features.get("spi_30d", 0.0)}
                     weather_combined["rain_7d_mm"] = openmeteo_features.get("rain_7d_mm", 0.0)
-                    weather_combined["rain_forecast_14d_mm"] = openmeteo_features.get("rain_forecast_14d_mm", 0.0)
-                    weather_combined["temp_max_c"] = openmeteo_features.get("temp_max_c", 35.0)
-                    weather_combined["temp_min_c"] = openmeteo_features.get("temp_min_c", 25.0)
                     weather_combined["humidity_pct"] = openmeteo_features.get("humidity_pct", 70.0)
 
                 if tmd_features:
                     weather_combined["rain_7d_mm"] = tmd_features.get("rain_7d_mm", weather_combined.get("rain_7d_mm", 0.0))
-                    weather_combined["rain_forecast_14d_mm"] = tmd_features.get("rain_forecast_14d_mm", weather_combined.get("rain_forecast_14d_mm", 0.0))
-                    weather_combined["temp_max_c"] = tmd_features.get("temp_max_c", weather_combined.get("temp_max_c", 35.0))
-                    weather_combined["temp_min_c"] = tmd_features.get("temp_min_c", weather_combined.get("temp_min_c", 25.0))
                     weather_combined["humidity_pct"] = tmd_features.get("humidity_pct", weather_combined.get("humidity_pct", 70.0))
-
-                terrain_data = {
-                    "elevation_m": dem_soil_features.get("elevation_m", 45.0) if dem_soil_features else 45.0,
-                    "slope_deg": dem_soil_features.get("slope_deg", 1.2) if dem_soil_features else 1.2,
-                    "aspect_deg": dem_soil_features.get("aspect_deg", 180.0) if dem_soil_features else 180.0,
-                    "river_distance_m": dem_soil_features.get("river_distance_m", 1200.0) if dem_soil_features else 1200.0,
-                }
-                
-                soil_data = {"land_use_type": "rice_paddy", "soil_water_capacity": 0.45}
-                if dem_soil_features and "soil_data" in dem_soil_features:
-                    soil_raw = dem_soil_features["soil_data"]
-                    soil_data["land_use_type"] = soil_raw.get("land_use_type", "rice_paddy")
-                    soil_data["soil_water_capacity"] = soil_raw.get("soil_water_capacity", 0.45)
 
                 fire_data = {
                     "hotspot_count_24h": 0, "hotspot_count_7d": 0,
-                    "nearest_hotspot_km": 999.0, "burn_scar_recurrence": 0.0,
-                    "hotspot_historical_density": 0.0,
+                    "nearest_hotspot_km": 999.0,
                 }
                 if fire_features:
-                    fire_data.update(fire_features)
+                    fire_data.update({
+                        k: v for k, v in fire_features.items()
+                        if k in ("hotspot_count_24h", "hotspot_count_7d", "nearest_hotspot_km")
+                    })
 
                 feature_vector = {
                     "plot_id": pipeline.config.DEMO_PLOT["plot_id"],
@@ -467,9 +442,7 @@ def main(phase1=True, phase2=True):
                     "confidence": confidence_level,
                     "indices": {"ndvi": 0.0, "ndmi": 0.0, "nbr": 0.0},
                     "weather": weather_combined,
-                    "terrain": terrain_data,
                     "fire": fire_data,
-                    "soil": soil_data,
                     "spi": spi_data,
                 }
 

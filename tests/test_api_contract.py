@@ -59,35 +59,23 @@ class FakeConnection:
 
 
 def make_plot_feature_row():
+    # Columns match PLOT_FEATURE_SELECT_COLUMNS (row[0]–row[14])
     return (
-        1,
-        datetime(2026, 5, 19, 6, 0, 0),
-        2,
-        12.5,
-        "high",
-        0.72,
-        0.35,
-        0.48,
-        45.2,
-        120.0,
-        35.2,
-        24.1,
-        78.5,
-        12.3,
-        225.0,
-        45.0,
-        3.2,
-        180.0,
-        1200.0,
-        0,
-        2,
-        4.5,
-        0.15,
-        "rice_paddy",
-        0.65,
-        -0.45,
-        -0.82,
-        -0.33,
+        1,               # plot_id
+        datetime(2026, 5, 19, 6, 0, 0),  # timestamp
+        2,               # data_freshness_days
+        12.5,            # cloud_cover_pct
+        "high",          # confidence
+        0.72,            # ndvi
+        0.35,            # ndmi
+        0.48,            # nbr
+        45.2,            # rain_7d_mm
+        78.5,            # humidity_pct
+        12.3,            # wind_speed_kmh
+        0,               # hotspot_count_24h
+        2,               # hotspot_count_7d
+        4.5,             # nearest_hotspot_km
+        -0.45,           # spi_30d
     )
 
 
@@ -109,10 +97,12 @@ def test_get_latest_feature_returns_nested_contract():
     assert payload["plot_id"] == "PLT-001"
     assert payload["indices"] == {"ndvi": 0.72, "ndmi": 0.35, "nbr": 0.48}
     assert payload["weather"]["wind_speed_kmh"] == 12.3
-    assert payload["terrain"]["river_distance_m"] == 1200.0
-    assert payload["fire"]["burn_scar_recurrence"] == 0.15
-    assert payload["fire"]["hotspot_historical_density"] == 0.075
-    assert payload["spi"]["spi_90d"] == -0.33
+    assert payload["weather"]["humidity_pct"] == 78.5
+    assert payload["fire"]["hotspot_count_24h"] == 0
+    assert payload["fire"]["nearest_hotspot_km"] == 4.5
+    assert payload["spi"]["spi_30d"] == -0.45
+    assert "terrain" not in payload
+    assert "soil" not in payload
 
 
 def test_get_feature_history_respects_requested_indices():
@@ -225,34 +215,17 @@ def test_extract_stats_accepts_explicit_feature_vector_path(tmp_path, monkeypatc
         "confidence": "high",
         "weather": {
             "rain_7d_mm": 45.2,
-            "rain_forecast_14d_mm": 120.0,
-            "temp_max_c": 35.2,
-            "temp_min_c": 24.1,
             "humidity_pct": 78.5,
             "wind_speed_kmh": 12.3,
             "wind_direction_deg": 225.0,
-        },
-        "terrain": {
-            "elevation_m": 45.0,
-            "slope_deg": 3.2,
-            "aspect_deg": 180.0,
-            "river_distance_m": 1200.0,
         },
         "fire": {
             "hotspot_count_24h": 0,
             "hotspot_count_7d": 2,
             "nearest_hotspot_km": 4.5,
-            "burn_scar_recurrence": 0.15,
-            "hotspot_historical_density": 0.075,
-        },
-        "soil": {
-            "land_use_type": "rice_paddy",
-            "soil_water_capacity": 0.65,
         },
         "spi": {
             "spi_30d": -0.45,
-            "spi_60d": -0.82,
-            "spi_90d": -0.33,
         },
     }
     feature_file.write_text(json.dumps(feature_payload), encoding="utf-8")

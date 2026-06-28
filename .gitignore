@@ -1,0 +1,65 @@
+# Satellite Team — .gitignore
+
+# ===========================
+# Python
+# ===========================
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# ===========================
+# Environment
+# ===========================
+.env
+# .env.example is a committed placeholder template (no real secrets) — keep it tracked
+!.env.example
+
+# ===========================
+# Data (large files)
+# ===========================
+data/raw/**/*.tif
+data/raw/**/*.nc
+data/raw/**/*.jp2
+data/raw/**/*.hdf
+data/processed/**/*.tif
+data/processed/**/*.parquet
+data/validation/*.png
+!data/**/.gitkeep
+
+# ===========================
+# IDE
+# ===========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ===========================
+# Jupyter
+# ===========================
+.ipynb_checkpoints/
+# Notebooks
+*.ipynb
+.jupyter/
+
+# Geospatial Data
+data/raw/shapefiles/
+
+# ===========================
+# Docker
+# ===========================
+pgdata/
+miniodata/
+
+# ===========================
+# OS
+# ===========================
+.DS_Store
+Thumbs.db
+desktop.ini

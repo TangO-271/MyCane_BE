@@ -1,0 +1,59 @@
+# === Satellite Team Dependencies ===
+
+# Geospatial Core
+rasterio>=1.3.0
+xarray>=2024.1.0
+geopandas>=0.14.0
+shapely>=2.0.0
+pyproj>=3.6.0
+fiona>=1.9.0
+rtree>=1.0.0
+
+# Data Processing
+numpy>=2.0.0
+pandas>=2.1.0
+scipy>=1.12.0
+rasterstats>=0.19.0
+
+# STAC / Satellite Data Access
+pystac-client>=0.7.0
+planetary-computer>=1.0.0
+
+# HTTP / API
+requests>=2.31.0
+aiohttp>=3.9.0
+fastapi>=0.100.0
+uvicorn>=0.23.0
+pydantic>=2.0.0
+
+# Visualization
+matplotlib>=3.8.0
+folium>=0.15.0
+contextily>=1.5.0
+
+# Database
+psycopg2-binary>=2.9.0
+sqlalchemy>=2.0.0
+geoalchemy2>=0.14.0
+
+# === Integrated Heaven's Eye BE Dependencies ===
+pyjwt==2.8.0
+passlib[bcrypt]==1.7.4
+python-multipart>=0.0.9
+pydantic[email]>=2.9.0
+
+# Storage
+boto3>=1.34.0
+
+# Utilities
+python-dotenv>=1.0.0
+tqdm>=4.66.0
+loguru>=0.7.0
+apscheduler>=3.10.0
+gunicorn>=21.2.0
+
+# Development
+jupyter>=1.0.0
+ipykernel>=6.29.0
+pytest>=7.4.0
+pytest-cov>=4.1.0

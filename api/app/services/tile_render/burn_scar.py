@@ -1,4 +1,5 @@
 from shapely.wkt import loads as wkt_loads
+from app.services.tile_render.common import draw_filled_polygon
 
 
 def render_burn_scar_tile(img, draw, to_pixels, cur, west, south, east, north):
@@ -16,18 +17,5 @@ def render_burn_scar_tile(img, draw, to_pixels, cur, west, south, east, north):
     for row in rows:
         wkt, source, area = row
         geom = wkt_loads(wkt)
-
-        def draw_geom(g):
-            if g.geom_type == 'Polygon':
-                ext_coords = [to_pixels(lon, lat) for lon, lat in g.exterior.coords]
-                if len(ext_coords) >= 3:
-                    draw.polygon(ext_coords, fill=(180, 50, 50, 100), outline=(180, 30, 30, 230))
-                for interior in g.interiors:
-                    int_coords = [to_pixels(lon, lat) for lon, lat in interior.coords]
-                    if len(int_coords) >= 3:
-                        draw.polygon(int_coords, fill=(0, 0, 0, 0), outline=(180, 30, 30, 230))
-            elif g.geom_type == 'MultiPolygon':
-                for poly in g.geoms:
-                    draw_geom(poly)
-
-        draw_geom(geom)
+        draw_filled_polygon(draw, to_pixels, geom,
+                            fill_color=(180, 50, 50, 100), outline_color=(180, 30, 30, 230), width=1)

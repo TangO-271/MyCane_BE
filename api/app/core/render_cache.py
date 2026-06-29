@@ -1,5 +1,6 @@
 from loguru import logger
 import app.core.state as state
+import app.core.constants as const
 
 
 def _compute_risk_scores(ndvi, ndmi, nbr, humidity_pct, rain_7d_mm,
@@ -9,34 +10,34 @@ def _compute_risk_scores(ndvi, ndmi, nbr, humidity_pct, rain_7d_mm,
     thresholds from CLAUDE.md (mirrored in alert_engine.py and sugarcaneIndices.ts).
     Returns (fire_risk, flood_risk, disease_risk) each in [0.0, 1.0].
     """
-    nearest_hs = float(nearest_hotspot_km) if nearest_hotspot_km is not None else 999.0
+    nearest_hs = float(nearest_hotspot_km) if nearest_hotspot_km is not None else const.DEFAULT_MISSING_HOTSPOT_KM
     hs_24h     = int(hotspot_count_24h)    if hotspot_count_24h    is not None else 0
-    hum        = float(humidity_pct)       if humidity_pct         is not None else 50.0
+    hum        = float(humidity_pct)       if humidity_pct         is not None else const.DEFAULT_HUMIDITY_PCT
     rain       = float(rain_7d_mm)         if rain_7d_mm           is not None else 0.0
 
     # Fire — hotspot proximity / recency (CLAUDE.md: danger < 5 km OR count_24h > 3)
-    if nearest_hs < 5.0 or hs_24h > 3:
-        fire_risk = 0.90
-    elif nearest_hs < 20.0 or hs_24h > 0:
-        fire_risk = 0.70
+    if nearest_hs < const.FIRE_DANGER_KM or hs_24h > const.FIRE_DANGER_COUNT_24H:
+        fire_risk = const.RISK_SCORE_DANGER
+    elif nearest_hs < const.FIRE_WARN_KM or hs_24h > const.FIRE_WARN_COUNT_24H:
+        fire_risk = const.RISK_SCORE_WARN
     else:
-        fire_risk = 0.20
+        fire_risk = const.RISK_SCORE_OK
 
     # Disease — humidity + rain accumulation (CLAUDE.md: humidity > 85% AND rain_7d > 15mm)
-    if hum > 85.0 and rain > 15.0:
-        disease_risk = 0.90
-    elif hum > 70.0 or rain > 10.0:
-        disease_risk = 0.55
+    if hum > const.DISEASE_DANGER_HUMIDITY and rain > const.DISEASE_DANGER_RAIN_7D:
+        disease_risk = const.RISK_SCORE_DANGER
+    elif hum > const.DISEASE_WARN_HUMIDITY or rain > const.DISEASE_WARN_RAIN_7D:
+        disease_risk = const.RISK_SCORE_DISEASE_WARN
     else:
-        disease_risk = 0.20
+        disease_risk = const.RISK_SCORE_OK
 
     # Flood — rain accumulation signal (no explicit CLAUDE.md threshold; derived from rain_7d)
-    if rain > 40.0:
-        flood_risk = 0.85
-    elif rain > 20.0:
-        flood_risk = 0.65
+    if rain > const.FLOOD_DANGER_RAIN_7D:
+        flood_risk = const.RISK_SCORE_FLOOD_DANGER
+    elif rain > const.FLOOD_WARN_RAIN_7D:
+        flood_risk = const.RISK_SCORE_FLOOD_WARN
     else:
-        flood_risk = 0.20
+        flood_risk = const.RISK_SCORE_OK
 
     return fire_risk, flood_risk, disease_risk
 
@@ -111,11 +112,11 @@ def refresh_plot_render_cache():
                 "geom_wkt":     geom_wkt,
                 "centroid_wkt": centroid_wkt,
                 "bbox":         (bbox_west, bbox_south, bbox_east, bbox_north),
-                "ndvi":         float(ndvi)              if ndvi              is not None else 0.5,
-                "ndmi":         float(ndmi)              if ndmi              is not None else 0.5,
-                "humidity_pct": float(humidity_pct)      if humidity_pct      is not None else 50.0,
-                "wind_dir":     float(wind_dir)          if wind_dir          is not None else 225.0,
-                "wind_speed":   float(wind_speed)        if wind_speed        is not None else 12.0,
+                "ndvi":         float(ndvi)              if ndvi              is not None else const.DEFAULT_INDEX_VALUE,
+                "ndmi":         float(ndmi)              if ndmi              is not None else const.DEFAULT_INDEX_VALUE,
+                "humidity_pct": float(humidity_pct)      if humidity_pct      is not None else const.DEFAULT_HUMIDITY_PCT,
+                "wind_dir":     float(wind_dir)          if wind_dir          is not None else const.DEFAULT_WIND_DEG,
+                "wind_speed":   float(wind_speed)        if wind_speed        is not None else const.DEFAULT_WIND_SPEED_KMH,
                 "fire_risk":    fire_risk,
                 "flood_risk":   flood_risk,
                 "disease_risk": disease_risk,

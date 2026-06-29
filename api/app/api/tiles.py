@@ -6,9 +6,11 @@ from typing import Optional
 
 import mercantile
 from fastapi import APIRouter, HTTPException, Query, Request, Response
+from loguru import logger
 from PIL import Image, ImageDraw
 
 import app.core.state as state
+import app.core.constants as const
 from app.utils.format import parse_plot_id
 from app.services.tile_render.raster import _render_index_tile_cached
 from app.services.tile_render.hotspot import render_hotspot_tile
@@ -67,7 +69,7 @@ def get_tile(
             return Response(
                 status_code=304,
                 headers={
-                    "Cache-Control": "public, max-age=300, stale-while-revalidate=600",
+                    "Cache-Control": const.CACHE_TILE_SHORT,
                     "ETag": etag,
                 },
             )
@@ -82,7 +84,7 @@ def get_tile(
             content=state.EMPTY_TILE_BYTES,
             media_type="image/png",
             headers={
-                "Cache-Control": "public, max-age=86400, stale-while-revalidate=172800",
+                "Cache-Control": const.CACHE_TILE_LONG,
                 "ETag": etag,
             },
         )
@@ -95,7 +97,7 @@ def get_tile(
             content=png_bytes,
             media_type="image/png",
             headers={
-                "Cache-Control": "public, max-age=300, stale-while-revalidate=600",
+                "Cache-Control": const.CACHE_TILE_SHORT,
                 "ETag": etag,
             },
         )
@@ -111,7 +113,7 @@ def get_tile(
             content=cached_png,
             media_type="image/png",
             headers={
-                "Cache-Control": "public, max-age=300, stale-while-revalidate=600",
+                "Cache-Control": const.CACHE_TILE_SHORT,
                 "ETag": etag,
             },
         )
@@ -128,9 +130,9 @@ def get_tile(
         buffer_meters = (max_x - min_x) * (64.0 / 256.0)
 
         def to_pixels(lng, lat):
-            mx = lng * 20037508.34 / 180.0
+            mx = lng * const.WEB_MERCATOR_HALF / 180.0
             my = math.log(math.tan((90.0 + lat) * math.pi / 360.0)) / (math.pi / 180.0)
-            my = my * 20037508.34 / 180.0
+            my = my * const.WEB_MERCATOR_HALF / 180.0
             px = 256.0 * (mx - min_x) / (max_x - min_x)
             py = 256.0 * (max_y - my) / (max_y - min_y)
             return px, py
@@ -170,13 +172,13 @@ def get_tile(
             content=png_bytes,
             media_type="image/png",
             headers={
-                "Cache-Control": "public, max-age=300, stale-while-revalidate=600",
+                "Cache-Control": const.CACHE_TILE_SHORT,
                 "ETag": etag,
             },
         )
 
     except Exception as e:
-        print(f"Error rendering vector tile: {e}")
+        logger.error(f"Error rendering vector tile: {e}")
         return empty_tile()
     finally:
         if cur is not None:

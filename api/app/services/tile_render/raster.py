@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import rasterio
 import mercantile
+from loguru import logger
 from rasterio.warp import reproject, Resampling
 from PIL import Image
 
@@ -86,5 +87,5 @@ def _render_index_tile_cached(layer: str, layer_upper: str, z: int, x: int, y: i
             img.save(buf, format="PNG")
             return buf.getvalue()
     except Exception as e:
-        print(f"Error rendering raster tile: {e}")
+        logger.error(f"Error rendering raster tile: {e}")
         return b""

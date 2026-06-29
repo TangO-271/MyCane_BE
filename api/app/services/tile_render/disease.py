@@ -1,27 +1,15 @@
 import math
+from loguru import logger
 from shapely.wkt import loads as wkt_loads
 import app.core.state as state
 from app.core.render_cache import _plots_in_tile
-from app.utils.format import parse_plot_id
+from app.services.tile_render.common import parse_tile_filters, draw_filled_polygon
 
 
 def render_disease_tile(img, draw, to_pixels,
                         west, south, east, north,
                         user_id, plot_id):
-    # Parse plot_id or user_id to integer if provided
-    plot_id_int = None
-    if plot_id:
-        try:
-            plot_id_int = parse_plot_id(plot_id)
-        except Exception:
-            pass
-
-    user_id_int = None
-    if user_id and plot_id_int is None:
-        try:
-            user_id_int = int(user_id)  # user_id is a plain integer, not a PLT-xxx plot id
-        except Exception:
-            pass
+    plot_id_int, user_id_int = parse_tile_filters(plot_id, user_id)
 
     # Use in-memory plot render cache — no DB query for plot/risk/feature data
     disease_icon = state.GLOBAL_ICONS.get("disease")
@@ -57,22 +45,9 @@ def render_disease_tile(img, draw, to_pixels,
                     fill_color = (74, 138, 42, 205)
                     outline_color = (56, 105, 32, 220)
 
-                def draw_plot_poly(g):
-                    if g.geom_type == 'Polygon':
-                        ext_coords = [to_pixels(lon, lat) for lon, lat in g.exterior.coords]
-                        if len(ext_coords) >= 3:
-                            draw.polygon(ext_coords, fill=fill_color, outline=outline_color, width=2)
-                        for interior in g.interiors:
-                            int_coords = [to_pixels(lon, lat) for lon, lat in interior.coords]
-                            if len(int_coords) >= 3:
-                                draw.polygon(int_coords, fill=(0, 0, 0, 0), outline=outline_color, width=2)
-                    elif g.geom_type == 'MultiPolygon':
-                        for poly in g.geoms:
-                            draw_plot_poly(poly)
-
-                draw_plot_poly(geom)
+                draw_filled_polygon(draw, to_pixels, geom, fill_color, outline_color)
             except Exception as e:
-                print(f"Error drawing colored plot boundary: {e}")
+                logger.error(f"Error drawing colored plot boundary: {e}")
 
         # 2. Render crop disease icon if the plot is in medium or worst level (NDVI <= 0.66)
         plot_ndvi = row_ndvi  # already a float from cache
@@ -99,4 +74,4 @@ def render_disease_tile(img, draw, to_pixels,
                         sy = py - 15 * math.cos(r_ang)
                         draw.ellipse([sx-3, sy-3, sx+3, sy+3], fill=(255, 193, 7, 255))
             except Exception as e:
-                print(f"Error rendering individual disease plot marker: {e}")
+                logger.error(f"Error rendering individual disease plot marker: {e}")

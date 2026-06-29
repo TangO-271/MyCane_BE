@@ -37,8 +37,13 @@ async def lifespan(app: FastAPI):
                     "CREATE INDEX IF NOT EXISTS idx_plot_features_plot_timestamp "
                     "ON plot_features(plot_id, timestamp DESC);"
                 )
+                # Add columns that may be missing if the DB was created from the old init.sql
+                # (which lacked crop and address). IF NOT EXISTS makes these safe to re-run.
+                cur.execute("ALTER TABLE plots ADD COLUMN IF NOT EXISTS crop VARCHAR(255);")
+                cur.execute("ALTER TABLE plots ADD COLUMN IF NOT EXISTS address VARCHAR(255);")
                 conn.commit()
                 logger.info("✅ Spatial and covering indexes on plots/features verified.")
+                logger.info("✅ plots.crop / plots.address columns ensured.")
         finally:
             state.db_pool.putconn(conn)
     except Exception as e:

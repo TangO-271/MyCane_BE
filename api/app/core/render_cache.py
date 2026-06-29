@@ -2,9 +2,48 @@ from loguru import logger
 import app.core.state as state
 
 
+def _compute_risk_scores(ndvi, ndmi, nbr, humidity_pct, rain_7d_mm,
+                          hotspot_count_24h, hotspot_count_7d, nearest_hotspot_km):
+    """
+    Derive fire/flood/disease risk scalars from the feature vector using the
+    thresholds from CLAUDE.md (mirrored in alert_engine.py and sugarcaneIndices.ts).
+    Returns (fire_risk, flood_risk, disease_risk) each in [0.0, 1.0].
+    """
+    nearest_hs = float(nearest_hotspot_km) if nearest_hotspot_km is not None else 999.0
+    hs_24h     = int(hotspot_count_24h)    if hotspot_count_24h    is not None else 0
+    hum        = float(humidity_pct)       if humidity_pct         is not None else 50.0
+    rain       = float(rain_7d_mm)         if rain_7d_mm           is not None else 0.0
+
+    # Fire — hotspot proximity / recency (CLAUDE.md: danger < 5 km OR count_24h > 3)
+    if nearest_hs < 5.0 or hs_24h > 3:
+        fire_risk = 0.90
+    elif nearest_hs < 20.0 or hs_24h > 0:
+        fire_risk = 0.70
+    else:
+        fire_risk = 0.20
+
+    # Disease — humidity + rain accumulation (CLAUDE.md: humidity > 85% AND rain_7d > 15mm)
+    if hum > 85.0 and rain > 15.0:
+        disease_risk = 0.90
+    elif hum > 70.0 or rain > 10.0:
+        disease_risk = 0.55
+    else:
+        disease_risk = 0.20
+
+    # Flood — rain accumulation signal (no explicit CLAUDE.md threshold; derived from rain_7d)
+    if rain > 40.0:
+        flood_risk = 0.85
+    elif rain > 20.0:
+        flood_risk = 0.65
+    else:
+        flood_risk = 0.20
+
+    return fire_risk, flood_risk, disease_risk
+
+
 def refresh_plot_render_cache():
     """Rebuild the in-memory plot render cache from a single batch DB query.
-    Called at startup and after each sync_ai_risk_scores() run.
+    Called at startup and after each sync run.
     Tile rendering reads from this cache instead of hitting the DB per tile."""
     if state.db_pool is None:
         return
@@ -15,7 +54,7 @@ def refresh_plot_render_cache():
             SELECT
                 p.id,
                 p.user_id,
-                ST_AsText(ST_Transform(p.geometry, 4326))       AS geom_wkt,
+                ST_AsText(ST_Transform(p.geometry, 4326))              AS geom_wkt,
                 ST_AsText(ST_Transform(ST_Centroid(p.geometry), 4326)) AS centroid_wkt,
                 ST_XMin(ST_Transform(p.geometry, 4326)),
                 ST_YMin(ST_Transform(p.geometry, 4326)),
@@ -23,12 +62,20 @@ def refresh_plot_render_cache():
                 ST_YMax(ST_Transform(p.geometry, 4326)),
                 pf.ndvi,
                 pf.ndmi,
+                pf.nbr,
                 pf.humidity_pct,
                 pf.wind_direction_deg,
-                pf.wind_speed_kmh
+                pf.wind_speed_kmh,
+                pf.rain_7d_mm,
+                pf.hotspot_count_24h,
+                pf.hotspot_count_7d,
+                pf.nearest_hotspot_km
             FROM plots p
             LEFT JOIN LATERAL (
-                SELECT ndvi, ndmi, humidity_pct, wind_direction_deg, wind_speed_kmh
+                SELECT
+                    ndvi, ndmi, nbr,
+                    humidity_pct, wind_direction_deg, wind_speed_kmh,
+                    rain_7d_mm, hotspot_count_24h, hotspot_count_7d, nearest_hotspot_km
                 FROM plot_features
                 WHERE plot_id = p.id
                 ORDER BY timestamp DESC
@@ -37,7 +84,6 @@ def refresh_plot_render_cache():
         """)
         rows = cur.fetchall()
 
-        # Also cache the global latest wind for fallback rendering
         cur.execute("""
             SELECT wind_direction_deg, wind_speed_kmh
             FROM plot_features
@@ -51,17 +97,28 @@ def refresh_plot_render_cache():
         for row in rows:
             (pid, uid, geom_wkt, centroid_wkt,
              bbox_west, bbox_south, bbox_east, bbox_north,
-             ndvi, ndmi, humidity_pct, wind_dir, wind_speed) = row
+             ndvi, ndmi, nbr,
+             humidity_pct, wind_dir, wind_speed,
+             rain_7d_mm, hotspot_count_24h, hotspot_count_7d, nearest_hotspot_km) = row
+
+            fire_risk, flood_risk, disease_risk = _compute_risk_scores(
+                ndvi, ndmi, nbr, humidity_pct, rain_7d_mm,
+                hotspot_count_24h, hotspot_count_7d, nearest_hotspot_km,
+            )
+
             new_cache[pid] = {
                 "user_id":      uid,
                 "geom_wkt":     geom_wkt,
                 "centroid_wkt": centroid_wkt,
                 "bbox":         (bbox_west, bbox_south, bbox_east, bbox_north),
-                "ndvi":         float(ndvi)         if ndvi         is not None else 0.5,
-                "ndmi":         float(ndmi)         if ndmi         is not None else 0.5,
-                "humidity_pct": float(humidity_pct) if humidity_pct is not None else 50.0,
-                "wind_dir":     float(wind_dir)     if wind_dir     is not None else 225.0,
-                "wind_speed":   float(wind_speed)   if wind_speed   is not None else 12.0,
+                "ndvi":         float(ndvi)              if ndvi              is not None else 0.5,
+                "ndmi":         float(ndmi)              if ndmi              is not None else 0.5,
+                "humidity_pct": float(humidity_pct)      if humidity_pct      is not None else 50.0,
+                "wind_dir":     float(wind_dir)          if wind_dir          is not None else 225.0,
+                "wind_speed":   float(wind_speed)        if wind_speed        is not None else 12.0,
+                "fire_risk":    fire_risk,
+                "flood_risk":   flood_risk,
+                "disease_risk": disease_risk,
             }
 
         with state._plot_render_cache_lock:

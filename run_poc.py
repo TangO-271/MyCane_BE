@@ -340,150 +340,77 @@ def main(phase1=True, phase2=True):
                 print(f"⚠️ Failed to save tile_scenes cache: {e}")
 
     # ============================================
-    # PHASE 2: Per-plot processing
+    # PHASE 2: Set-based processing (A + B + D)
+    # ─ A: one PostGIS KNN query → hotspot features for all plots
+    # ─ B: one raster pass per index → zonal mean for all plots in tile
+    # ─ D: per-tile weather fetch + single batch upsert; no per-plot file shuffle
     # ============================================
-    output_dir = PROCESSED_DIR / "poc"
     if phase2:
         from pipeline.ingestion.fetch_weather import main as fetch_openmeteo_weather
         from pipeline.ingestion.fetch_tmd_weather import main as fetch_tmd_weather
-        from pipeline.ingestion.fetch_burn_scars import main as fetch_fire_features
-        from pipeline.zonal_stats.extract_stats import main as extract_stats
+        from pipeline.ingestion.fetch_burn_scars import main as fetch_firms_and_save
+        from pipeline.zonal_stats.compute_hotspot_features import compute_hotspot_features_for_all_plots
+        from pipeline.zonal_stats.extract_stats_batch import extract_stats_batch
 
-        from concurrent.futures import ThreadPoolExecutor
-        import threading
+        # Step A-1: Fetch VIIRS hotspots for whole AOI + persist to hotspots table (once)
+        print("\n" + "=" * 60)
+        print("🔥  PHASE 2-A: FIRMS hotspot fetch (AOI-wide)")
+        print("=" * 60)
+        run_step("FIRMS Hotspot Fetch + DB Save", fetch_firms_and_save)
 
+        # Step A-2: One PostGIS KNN query → accurate per-plot hotspot distances/counts
+        print("\n📍 Computing per-plot hotspot features via PostGIS KNN...")
+        hotspot_by_plot = compute_hotspot_features_for_all_plots()
+        print(f"✅ Hotspot features ready for {len(hotspot_by_plot)} plots")
+
+        # Group plots by tile for per-tile weather + raster processing
+        tile_groups = group_plots_by_tile(plots_in_db)
         success_count = 0
-        success_lock = threading.Lock()
-
-        def process_single_plot(plot_row):
-            plot_id, plot_name, lat, lon = plot_row
-            province = "phitsanulok"  # Default fallback since DB lacks province column
-            print(f"\n🚀 [Thread] PROCESSING PLOT: {plot_name} (ID: {plot_id}) | Lat: {lat:.4f}, Lon: {lon:.4f}")
-
-            # 💡 DYNAMICALLY OVERRIDE the global DEMO_PLOT config (thread-safe due to ThreadLocalDict)
-            pipeline.config.DEMO_PLOT.update({
-                "plot_id": str(plot_id),
-                "plot_name": plot_name or f"Plot {plot_id}",
-                "center": {
-                    "lat": float(lat),
-                    "lon": float(lon)
-                },
-                "province": province or "phitsanulok",
-                "crop_type": "rice"
-            })
-
-            try:
-                # Step 1: Open-Meteo Weather
-                openmeteo_features = run_step(f"Weather Data (Open-Meteo) for {plot_name}", fetch_openmeteo_weather)
-
-                # Step 2: TMD Weather
-                tmd_features = None
-                if keys.get("TMD"):
-                    tmd_features = run_step(f"Weather Data (TMD API) for {plot_name}", fetch_tmd_weather)
-
-                # Step 3: Fire & Hotspots (NASA FIRMS)
-                fire_features = run_step(f"Fire & Hotspot Features (NASA FIRMS) for {plot_name}", fetch_fire_features)
-
-                # Look up Sentinel-2 data from Phase 1
-                tile_key = get_tile_key_for_plot(lat, lon)
-                scene_info = tile_scenes.get(tile_key)
-                
-                # Compute per-plot confidence from actual tile scene data
-                if scene_info:
-                    cloud_cover_pct = scene_info.get("cloud_cover", 9.12)
-                    if isinstance(cloud_cover_pct, str) or cloud_cover_pct is None:
-                        cloud_cover_pct = 50.0
-                    s2_date_str = scene_info.get("datetime")
-                    try:
-                        s2_dt = datetime.fromisoformat(str(s2_date_str).replace("Z", "+00:00"))
-                        data_freshness_days = (datetime.now(s2_dt.tzinfo) - s2_dt).days
-                    except Exception:
-                        data_freshness_days = 30
-                else:
-                    cloud_cover_pct = 100.0  # No scene available
-                    data_freshness_days = 999
-
-                if data_freshness_days <= 3 and cloud_cover_pct < 20.0:
-                    confidence_level = "high"
-                elif data_freshness_days <= 7 and cloud_cover_pct < 50.0:
-                    confidence_level = "medium"
-                else:
-                    confidence_level = "low"
-
-                # Combine weather features (only the fields stored in plot_features)
-                weather_combined = {}
-                spi_data = {}
-                if openmeteo_features:
-                    weather_combined["wind_speed_kmh"] = openmeteo_features.get("wind_speed_kmh", 0.0)
-                    weather_combined["wind_direction_deg"] = openmeteo_features.get("wind_direction_deg", 0.0)
-                    spi_data = {"spi_30d": openmeteo_features.get("spi_30d", 0.0)}
-                    weather_combined["rain_7d_mm"] = openmeteo_features.get("rain_7d_mm", 0.0)
-                    weather_combined["humidity_pct"] = openmeteo_features.get("humidity_pct", 70.0)
-
-                if tmd_features:
-                    weather_combined["rain_7d_mm"] = tmd_features.get("rain_7d_mm", weather_combined.get("rain_7d_mm", 0.0))
-                    weather_combined["humidity_pct"] = tmd_features.get("humidity_pct", weather_combined.get("humidity_pct", 70.0))
-
-                fire_data = {
-                    "hotspot_count_24h": 0, "hotspot_count_7d": 0,
-                    "nearest_hotspot_km": 999.0,
-                }
-                if fire_features:
-                    fire_data.update({
-                        k: v for k, v in fire_features.items()
-                        if k in ("hotspot_count_24h", "hotspot_count_7d", "nearest_hotspot_km")
-                    })
-
-                feature_vector = {
-                    "plot_id": pipeline.config.DEMO_PLOT["plot_id"],
-                    "timestamp": datetime.now().isoformat(),
-                    "data_freshness_days": data_freshness_days,
-                    "cloud_cover_pct": cloud_cover_pct,
-                    "confidence": confidence_level,
-                    "indices": {"ndvi": 0.0, "ndmi": 0.0, "nbr": 0.0},
-                    "weather": weather_combined,
-                    "fire": fire_data,
-                    "spi": spi_data,
-                }
-
-                output_dir.mkdir(parents=True, exist_ok=True)
-                output_file = output_dir / f"feature_vector_{pipeline.config.DEMO_PLOT['plot_name']}_{datetime.now().strftime('%Y%m%d%H')}.json"
-
-                with open(output_file, "w", encoding="utf-8") as f:
-                    json.dump(feature_vector, f, indent=2, ensure_ascii=False, default=str)
-
-                # Step 9: Zonal Stats & Database Ingestion
-                db_result = run_step(f"Zonal Stats & DB Ingestion for {plot_name}", extract_stats, str(output_file))
-
-                if db_result:
-                    print(f"✅ Successfully processed plot {plot_id}.")
-                    with success_lock:
-                        nonlocal success_count
-                        success_count += 1
-                else:
-                    print(f"⚠️ Processed plot {plot_id} but DB ingestion failed.")
-
-            except Exception as e:
-                print(f"❌ CRITICAL ERROR on plot {plot_id}: {e}")
-
-        # Run concurrently with ThreadPoolExecutor (max_workers=10 for high concurrent throughput)
-        print(f"🚀 Starting parallel ingestion of {len(plots_in_db)} plots using 10 threads...")
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            executor.map(process_single_plot, plots_in_db)
 
         print("\n" + "=" * 60)
-        print(f"✅ BATCH PIPELINE COMPLETE. Successfully processed {success_count}/{len(plots_in_db)} plots.")
+        print(f"🗺️  PHASE 2-B/D: Per-tile weather + batch zonal stats ({len(tile_groups)} tiles)")
+        print("=" * 60)
+
+        for tile_key, tile_info in tile_groups.items():
+            tile_plot_rows = tile_info["plots"]
+            bbox = tile_info["bbox"]
+            tile_center_lat = (bbox[1] + bbox[3]) / 2
+            tile_center_lon = (bbox[0] + bbox[2]) / 2
+
+            print(f"\n🗺️  Tile {tile_key}: {len(tile_plot_rows)} plots | "
+                  f"center ({tile_center_lat:.3f}, {tile_center_lon:.3f})")
+
+            # Set DEMO_PLOT to tile centre so weather fetcher uses the correct coordinates
+            pipeline.config.DEMO_PLOT.update({
+                "center":   {"lat": tile_center_lat, "lon": tile_center_lon},
+                "province": tile_key if not tile_key.startswith("dynamic") else "phitsanulok",
+            })
+
+            # Fetch weather for tile centre (single call covers all plots in this province)
+            weather = run_step(f"Weather (Open-Meteo) tile={tile_key}", fetch_openmeteo_weather) or {}
+            if keys.get("TMD"):
+                tmd = run_step(f"Weather (TMD) tile={tile_key}", fetch_tmd_weather) or {}
+                if tmd:
+                    weather["rain_7d_mm"]   = tmd.get("rain_7d_mm",   weather.get("rain_7d_mm",   0.0))
+                    weather["humidity_pct"] = tmd.get("humidity_pct", weather.get("humidity_pct", 70.0))
+
+            # Step B: one raster pass per index → all plots in tile via rasterstats
+            scene_info = tile_scenes.get(tile_key)
+            n = run_step(
+                f"Batch Zonal Stats + DB Upsert tile={tile_key}",
+                extract_stats_batch,
+                tile_plot_rows, scene_info, weather, hotspot_by_plot,
+            )
+            success_count += (n or 0)
+
+        print("\n" + "=" * 60)
+        print(f"✅ PHASE 2 COMPLETE: {success_count}/{len(plots_in_db)} plots upserted.")
         print("=" * 60)
 
     # Step 10: Upload to S3
     print("\n☁️  Step 10: Upload processed files to S3")
     try:
         from pipeline.utils.s3_client import upload_to_s3
-        if phase2:
-            for json_file in output_dir.glob("*.json"):
-                s3_key = f"processed/poc/{json_file.name}"
-                upload_to_s3(str(json_file), s3_key)
-            
         if phase1:
             indices_dir = PROCESSED_DIR / "indices"
             if indices_dir.exists():

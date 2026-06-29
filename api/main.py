@@ -7,6 +7,14 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 sys.path.append(str(Path(__file__).parent))
 
+# Load .env BEFORE importing any app module. The decoupled db_pool/s3/alert_engine
+# read DATABASE_URL and S3_* from os.environ at import time; without this they fall
+# back to a localhost DB default and fail. Mirrors app.core.config's loader.
+from dotenv import load_dotenv
+_BE_ROOT = Path(__file__).parent.parent
+_env_file = _BE_ROOT / "config" / ".env"
+load_dotenv(_env_file if _env_file.exists() else _BE_ROOT / ".env")
+
 from fastapi import FastAPI
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles

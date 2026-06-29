@@ -8,7 +8,7 @@ from loguru import logger
 
 
 def _client():
-    cfg = Config(connect_timeout=10, read_timeout=120, retries={"max_attempts": 2})
+    cfg = Config(connect_timeout=5, read_timeout=30, retries={"max_attempts": 1})
     return boto3.client(
         "s3",
         endpoint_url=os.environ.get("S3_ENDPOINT"),

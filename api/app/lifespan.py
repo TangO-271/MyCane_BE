@@ -62,15 +62,22 @@ async def lifespan(app: FastAPI):
     logger.info("📦 Warming plot render cache...")
     refresh_plot_render_cache()
 
-    # ── Pre-fetch latest index TIFs from S3 ─────────────────────────────
-    logger.info("☁️ Pre-fetching latest satellite indices from S3...")
+    # ── Pre-fetch latest index TIFs from S3 (background — don't block startup) ──
     indices_dir = _BE_ROOT / "data" / "processed" / "indices" / "latest"
     indices_dir.mkdir(parents=True, exist_ok=True)
-    for layer in ["NDVI", "NDMI", "NBR"]:
-        s3_key = f"processed/indices/latest_{layer}.tif"
-        local_path = indices_dir / f"latest_{layer}.tif"
-        if not local_path.exists() and check_s3_file_exists(s3_key):
-            download_from_s3(s3_key, str(local_path))
+
+    def _prefetch_s3_tifs():
+        logger.info("☁️ S3 TIF pre-fetch starting in background...")
+        for layer in ["NDVI", "NDMI", "NBR"]:
+            s3_key = f"processed/indices/latest_{layer}.tif"
+            local_path = indices_dir / f"latest_{layer}.tif"
+            if not local_path.exists() and check_s3_file_exists(s3_key):
+                download_from_s3(s3_key, str(local_path))
+        logger.info("☁️ S3 TIF pre-fetch complete.")
+
+    import threading
+    threading.Thread(target=_prefetch_s3_tifs, daemon=True).start()
+    logger.info("☁️ S3 TIF pre-fetch dispatched to background thread.")
 
     # ── Lightweight scheduler (alerts + cache only — no pipeline) ────────
     logger.info("🚀 Starting background scheduler (alerts + cache refresh every 30 min)...")

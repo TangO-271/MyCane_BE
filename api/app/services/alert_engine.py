@@ -10,16 +10,15 @@ Run on a schedule (hooked into the hourly ingestion job in main.py) or on demand
 POST /api/v1/notifications/run-alert-scan.
 """
 
-import sys
-from pathlib import Path
+import os
 from datetime import date
 
 import psycopg2
 from loguru import logger
 
-sys.path.append(str(Path(__file__).resolve().parents[3]))
-from pipeline.config import DATABASE_URL  # noqa: E402
-from app.services.dispatch import dispatch_to_channels  # noqa: E402
+from app.services.dispatch import dispatch_to_channels
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
 
 def _insert_notification(cur, user_id, plot_id, title, message, hazard, severity, dedupe_key):

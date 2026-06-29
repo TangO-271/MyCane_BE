@@ -1,8 +1,10 @@
+import os
 import threading
 import psycopg2
 from psycopg2.pool import ThreadedConnectionPool
 import app.core.state as state
-from pipeline.config import DATABASE_URL
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
 
 class BlockingThreadedConnectionPool(ThreadedConnectionPool):

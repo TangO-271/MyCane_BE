@@ -2,7 +2,8 @@ import sys
 import os
 from pathlib import Path
 
-# Add MyCane_DB (pipeline package) and api root to sys.path
+# Add MyCane_BE/ root and api/ to sys.path for direct `python api/main.py` runs.
+# MyCane_DB is no longer on sys.path — pipeline runs independently.
 sys.path.append(str(Path(__file__).parent.parent))
 sys.path.append(str(Path(__file__).parent))
 

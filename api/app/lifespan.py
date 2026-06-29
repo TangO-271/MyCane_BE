@@ -68,11 +68,19 @@ async def lifespan(app: FastAPI):
 
     def _prefetch_s3_tifs():
         logger.info("☁️ S3 TIF pre-fetch starting in background...")
+        downloaded = False
         for layer in ["NDVI", "NDMI", "NBR"]:
             s3_key = f"processed/indices/latest_{layer}.tif"
             local_path = indices_dir / f"latest_{layer}.tif"
             if not local_path.exists() and check_s3_file_exists(s3_key):
-                download_from_s3(s3_key, str(local_path))
+                if download_from_s3(s3_key, str(local_path)):
+                    downloaded = True
+        # Tile requests arriving before the TIFs landed cached empty b"" results
+        # in the raster lru_cache. Evict them so freshly-downloaded TIFs render.
+        if downloaded:
+            from app.services.tile_render.raster import _render_index_tile_cached
+            _render_index_tile_cached.cache_clear()
+            logger.info("☁️ Raster tile cache cleared after S3 pre-fetch.")
         logger.info("☁️ S3 TIF pre-fetch complete.")
 
     import threading

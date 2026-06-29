@@ -20,7 +20,7 @@ def render_flood_tile(img, draw, to_pixels, cur,
     user_id_int = None
     if user_id and plot_id_int is None:
         try:
-            user_id_int = parse_plot_id(user_id)
+            user_id_int = int(user_id)  # user_id is a plain integer, not a PLT-xxx plot id
         except Exception:
             pass
 

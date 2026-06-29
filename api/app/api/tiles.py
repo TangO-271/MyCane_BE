@@ -48,7 +48,8 @@ def get_tile(
             if plot_id:
                 parse_plot_id(plot_id)
             elif user_id:
-                parse_plot_id(user_id)
+                # user_id is a plain integer, not a PLT-xxx plot id.
+                int(user_id)
         except Exception:
             raise HTTPException(
                 status_code=400,
@@ -90,7 +91,14 @@ def get_tile(
         png_bytes = _render_index_tile_cached(layer, layer.upper(), z, x, y)
         if not png_bytes:
             return empty_tile()
-        return Response(content=png_bytes, media_type="image/png")
+        return Response(
+            content=png_bytes,
+            media_type="image/png",
+            headers={
+                "Cache-Control": "public, max-age=300, stale-while-revalidate=600",
+                "ETag": etag,
+            },
+        )
 
     # ── vector layers ──────────────────────────────────────────────────────────
     with state._vtile_lock:

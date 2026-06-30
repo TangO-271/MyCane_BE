@@ -56,8 +56,10 @@ def create_plot(plot: PlotCreate, db: Session = Depends(get_db), current_user: U
             plot_name=plot.plot_name,
             geometry=utm_geom,
             area_size=area_m2,          # ✅ persist computed area
-            crop=None,
-            address=None
+            # Sugarcane (อ้อย) is the default crop across all five AOI provinces
+            # (CLAUDE.md). Honour a crop the client supplied, else default to อ้อย.
+            crop=plot.crop or "อ้อย",
+            address=plot.address,
         )
         db.add(new_plot)
         db.commit()

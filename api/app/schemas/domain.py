@@ -150,8 +150,8 @@ class PlotCreate(BaseModel):
     )
     crop: Optional[str] = Field(
         None,
-        description="Type of crop planted",
-        example="ข้าว (นาปี)"
+        description="Type of crop planted (defaults to 'อ้อย' / sugarcane when omitted)",
+        example="อ้อย"
     )
     address: Optional[str] = Field(
         None,

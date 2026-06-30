@@ -348,7 +348,7 @@ def main(phase1=True, phase2=True):
     if phase2:
         from pipeline.ingestion.fetch_weather import main as fetch_openmeteo_weather
         from pipeline.ingestion.fetch_tmd_weather import main as fetch_tmd_weather
-        from pipeline.ingestion.fetch_burn_scars import main as fetch_firms_and_save
+        from pipeline.ingestion.fetch_burn_scars import main as fetch_firms_and_burn_scars
         from pipeline.zonal_stats.compute_hotspot_features import compute_hotspot_features_for_all_plots
         from pipeline.zonal_stats.extract_stats_batch import extract_stats_batch
 
@@ -356,7 +356,7 @@ def main(phase1=True, phase2=True):
         print("\n" + "=" * 60)
         print("🔥  PHASE 2-A: FIRMS hotspot fetch (AOI-wide)")
         print("=" * 60)
-        run_step("FIRMS Hotspot Fetch + DB Save", fetch_firms_and_save)
+        run_step("FIRMS Hotspot Fetch + DB Save + Burn Scar Proxy", fetch_firms_and_burn_scars)
 
         # Step A-2: One PostGIS KNN query → accurate per-plot hotspot distances/counts
         print("\n📍 Computing per-plot hotspot features via PostGIS KNN...")

@@ -119,9 +119,13 @@ def get_tile(
         )
 
     _needs_db = layer in _DB_LAYERS
-    conn = state.db_pool.getconn() if _needs_db else None
+    conn = None
     cur = None
     try:
+        # Acquire inside the try so a DB hiccup (e.g. pooler saturation) degrades to
+        # an empty tile instead of a 500 that breaks the whole map.
+        if _needs_db:
+            conn = state.db_pool.getconn()
         bounds = mercantile.bounds(x, y, z)
         west, south, east, north = bounds.west, bounds.south, bounds.east, bounds.north
 

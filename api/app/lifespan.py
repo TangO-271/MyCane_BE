@@ -24,8 +24,15 @@ async def lifespan(app: FastAPI):
     # ── DB pool ──────────────────────────────────────────────────────────
     logger.info("🚀 Initializing Database Connection Pool...")
     try:
-        state.db_pool = BlockingThreadedConnectionPool(minconn=5, maxconn=40, dsn=DATABASE_URL)
-        logger.info("✅ Database Connection Pool initialized successfully.")
+        # Keep psycopg2 + SQLAlchemy (app/core/config.py) combined under Supabase's
+        # session-mode pooler limit (default 15) or new connections fail with
+        # "max clients reached in session mode". maxconn=8 here + ≤5 in SQLAlchemy = 13.
+        # The pool BLOCKS at maxconn (semaphore) so bursts of tile requests queue
+        # instead of exceeding the limit. Override via DB_POOL_MIN / DB_POOL_MAX.
+        _db_min = int(os.getenv("DB_POOL_MIN", "2"))
+        _db_max = int(os.getenv("DB_POOL_MAX", "8"))
+        state.db_pool = BlockingThreadedConnectionPool(minconn=_db_min, maxconn=_db_max, dsn=DATABASE_URL)
+        logger.info(f"✅ Database Connection Pool initialized (min={_db_min}, max={_db_max}).")
 
         conn = state.db_pool.getconn()
         try:

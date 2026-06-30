@@ -18,7 +18,20 @@ DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localho
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-engine = create_engine(DATABASE_URL)
+# Supabase's session-mode pooler caps total clients (default 15). The BE opens
+# connections from TWO places against the same pooler — this SQLAlchemy engine AND
+# the psycopg2 pool (app/core/db_pool.py, sized in app/lifespan.py). Their combined
+# max must stay under that limit or new connections fail with
+# "max clients reached in session mode". Budget: SQLAlchemy ≤5 + psycopg2 ≤8 = 13.
+#   - pool_pre_ping: drop connections Supabase closed while idle (avoids stale-conn errors)
+#   - pool_recycle: proactively recycle before the pooler's idle timeout
+engine = create_engine(
+    DATABASE_URL,
+    pool_size=int(os.getenv("SQLALCHEMY_POOL_SIZE", "3")),
+    max_overflow=int(os.getenv("SQLALCHEMY_MAX_OVERFLOW", "2")),
+    pool_pre_ping=True,
+    pool_recycle=1800,
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()

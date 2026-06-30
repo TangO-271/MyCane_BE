@@ -51,7 +51,18 @@ def get_latest_feature(plot_id: str, response: Response, conn=Depends(get_raw_db
     cur.close()
 
     if not r:
-        raise HTTPException(status_code=404, detail="PLOT_NOT_FOUND or NO_DATA_AVAILABLE")
+        # Disambiguate: a plot that exists but has no satellite features yet
+        # (brand-new plot, awaiting the next ingestion) vs a plot that doesn't
+        # exist at all. The FE renders these differently — "รอข้อมูล ~1 ชม."
+        # vs "ไม่พบแปลงนี้".
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM plots WHERE id = %s LIMIT 1;", (plot_id_int,))
+        plot_exists = cur.fetchone() is not None
+        cur.close()
+        raise HTTPException(
+            status_code=404,
+            detail="NO_DATA_AVAILABLE" if plot_exists else "PLOT_NOT_FOUND",
+        )
 
     # Features update only during daily ingestion; 5-min fresh cache, 1-hour stale window.
     response.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=3600"

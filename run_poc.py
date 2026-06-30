@@ -351,6 +351,7 @@ def main(phase1=True, phase2=True):
         from pipeline.ingestion.fetch_burn_scars import main as fetch_firms_and_burn_scars
         from pipeline.zonal_stats.compute_hotspot_features import compute_hotspot_features_for_all_plots
         from pipeline.zonal_stats.extract_stats_batch import extract_stats_batch
+        from pipeline.utils.weather_timeseries import upsert_weather_timeseries
 
         # Step A-1: Fetch VIIRS hotspots for whole AOI + persist to hotspots table (once)
         print("\n" + "=" * 60)
@@ -402,6 +403,15 @@ def main(phase1=True, phase2=True):
                 tile_plot_rows, scene_info, weather, hotspot_by_plot,
             )
             success_count += (n or 0)
+
+            daily_forecast = weather.get("_daily_forecast")
+            if daily_forecast:
+                plot_ids_in_tile = [int(row[0]) for row in tile_plot_rows]
+                run_step(
+                    f"Weather Timeseries tile={tile_key}",
+                    upsert_weather_timeseries,
+                    plot_ids_in_tile, daily_forecast,
+                )
 
         print("\n" + "=" * 60)
         print(f"✅ PHASE 2 COMPLETE: {success_count}/{len(plots_in_db)} plots upserted.")

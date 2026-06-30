@@ -8,6 +8,7 @@ from app.core.db_pool import get_raw_db
 from app.models.geo import (
     PlotFeatureResponse, PlotHistoryResponse,
     PlotCreateResponse, PlotCreateRequest,
+    PlotForecastResponse, WeatherForecastDay,
 )
 from app.utils.format import (
     parse_plot_id, format_plot_id,
@@ -120,6 +121,45 @@ def get_feature_history(
         series.append(point)
 
     return PlotHistoryResponse(plot_id=format_plot_id(plot_id_int), series=series)
+
+
+@router.get("/features/{plot_id}/forecast", response_model=PlotForecastResponse)
+def get_plot_forecast(plot_id: str, conn=Depends(get_raw_db)):
+    """พยากรณ์อากาศ 14 วัน สำหรับแปลงเกษตร — ดึงจาก plot_weather_timeseries"""
+    plot_id_int = parse_plot_id(plot_id)
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT
+            TO_CHAR(forecast_time, 'YYYY-MM-DD') AS date,
+            temperature_c,
+            humidity_pct,
+            rainfall_mm,
+            wind_speed_kmh,
+            wind_direction_deg
+        FROM plot_weather_timeseries
+        WHERE plot_id = %s AND is_forecast = TRUE
+          AND forecast_time >= CURRENT_DATE
+        ORDER BY forecast_time ASC
+        LIMIT 14;
+        """,
+        (plot_id_int,),
+    )
+    rows = cur.fetchall()
+    cur.close()
+
+    forecast = [
+        WeatherForecastDay(
+            date=r[0],
+            temp_c=float(r[1]) if r[1] is not None else None,
+            humidity_pct=float(r[2]) if r[2] is not None else None,
+            rainfall_mm=float(r[3]) if r[3] is not None else None,
+            wind_speed_kmh=float(r[4]) if r[4] is not None else None,
+            wind_direction_deg=float(r[5]) if r[5] is not None else None,
+        )
+        for r in rows
+    ]
+    return PlotForecastResponse(plot_id=format_plot_id(plot_id_int), forecast=forecast)
 
 
 @router.post("/plots", status_code=201, response_model=PlotCreateResponse)

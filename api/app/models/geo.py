@@ -58,6 +58,20 @@ class PlotCreateRequest(BaseModel):
     province: str
 
 
+class WeatherForecastDay(BaseModel):
+    date: str                           # ISO date "YYYY-MM-DD"
+    temp_c: float | None = None
+    humidity_pct: float | None = None
+    rainfall_mm: float | None = None
+    wind_speed_kmh: float | None = None
+    wind_direction_deg: float | None = None
+
+
+class PlotForecastResponse(BaseModel):
+    plot_id: str
+    forecast: List[WeatherForecastDay]
+
+
 class HotspotGeometry(BaseModel):
     type: str = "Point"
     coordinates: List[float]  # [lon, lat]

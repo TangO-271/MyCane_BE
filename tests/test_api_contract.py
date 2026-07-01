@@ -201,6 +201,45 @@ def test_get_hotspots_returns_geojson_collection():
     assert payload["features"][0]["properties"]["confidence"] == "medium"
 
 
+def test_get_burn_scars_returns_geojson_collection():
+    geojson = '{"type":"Polygon","coordinates":[[[100.2,16.8],[100.3,16.8],[100.3,16.9],[100.2,16.8]]]}'
+    rows = [(geojson, "VIIRS", 12345.6)]
+    fake_conn = FakeConnection(FakeCursor(rows=rows))
+
+    def override_get_db():
+        yield fake_conn
+
+    api_main.app.dependency_overrides[api_main.get_db] = override_get_db
+    client = TestClient(api_main.app)
+
+    response = client.get("/api/v1/burn_scars", params={"bbox": "100.2,16.8,100.3,16.9"})
+
+    api_main.app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["type"] == "FeatureCollection"
+    assert payload["features"][0]["geometry"]["type"] == "Polygon"
+    assert payload["features"][0]["properties"]["source"] == "VIIRS"
+    assert payload["features"][0]["properties"]["area_sqm"] == 12345.6
+
+
+def test_get_burn_scars_rejects_bad_bbox():
+    fake_conn = FakeConnection(FakeCursor(rows=[]))
+
+    def override_get_db():
+        yield fake_conn
+
+    api_main.app.dependency_overrides[api_main.get_db] = override_get_db
+    client = TestClient(api_main.app)
+
+    response = client.get("/api/v1/burn_scars", params={"bbox": "1,2,3"})
+
+    api_main.app.dependency_overrides.clear()
+
+    assert response.status_code == 400
+
+
 def test_extract_stats_accepts_explicit_feature_vector_path(tmp_path, monkeypatch):
     processed_dir = tmp_path / "processed"
     indices_dir = processed_dir / "indices"

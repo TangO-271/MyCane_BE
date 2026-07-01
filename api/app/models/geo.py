@@ -93,3 +93,19 @@ class HotspotFeature(BaseModel):
 class HotspotCollection(BaseModel):
     type: str = "FeatureCollection"
     features: List[HotspotFeature]
+
+
+class BurnScarProperties(BaseModel):
+    source: str | None = None
+    area_sqm: float | None = None
+
+
+class BurnScarFeature(BaseModel):
+    type: str = "Feature"
+    geometry: Dict[str, Any]  # GeoJSON Polygon/MultiPolygon (WGS84)
+    properties: BurnScarProperties
+
+
+class BurnScarCollection(BaseModel):
+    type: str = "FeatureCollection"
+    features: List[BurnScarFeature]

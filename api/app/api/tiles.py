@@ -59,9 +59,14 @@ def get_tile(
             )
 
     current_hour = datetime.utcnow().strftime("%Y-%m-%d-%H")
-    etag_raw = f"{layer}_{z}_{x}_{y}_{user_id or ''}_{plot_id or ''}_{current_hour}"
+    # Raster tiles change once per day (pipeline is daily) → daily ETag so the CDN
+    # key doesn't churn hourly. Vector tiles keep the hourly bucket.
+    etag_period = datetime.utcnow().strftime("%Y-%m-%d") if layer in _RASTER_LAYERS else current_hour
+    etag_raw = f"{layer}_{z}_{x}_{y}_{user_id or ''}_{plot_id or ''}_{etag_period}"
     etag_val = hashlib.md5(etag_raw.encode()).hexdigest()
     etag = f'"{etag_val}"'
+
+    tile_cache_control = const.CACHE_TILE_LONG if layer in _RASTER_LAYERS else const.CACHE_TILE_SHORT
 
     if request:
         if_none_match = request.headers.get("if-none-match")
@@ -69,7 +74,7 @@ def get_tile(
             return Response(
                 status_code=304,
                 headers={
-                    "Cache-Control": const.CACHE_TILE_SHORT,
+                    "Cache-Control": tile_cache_control,
                     "ETag": etag,
                 },
             )
@@ -97,7 +102,7 @@ def get_tile(
             content=png_bytes,
             media_type="image/png",
             headers={
-                "Cache-Control": const.CACHE_TILE_SHORT,
+                "Cache-Control": const.CACHE_TILE_LONG,
                 "ETag": etag,
             },
         )

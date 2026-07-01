@@ -27,6 +27,7 @@ from app.api.plots import router as plots_router
 from app.api.notifications import router as notifications_router
 from app.api.features import router as features_router
 from app.api.hotspots import router as hotspots_router
+from app.api.burn_scars import router as burn_scars_router
 from app.api.tiles import router as tiles_router
 from app.lifespan import lifespan
 
@@ -44,6 +45,7 @@ app.include_router(plots_router,         prefix="/api/v1/plots",         tags=["
 app.include_router(notifications_router, prefix="/api/v1/notifications", tags=["Notifications"])
 app.include_router(features_router,      prefix="/api/v1",               tags=["Geo Features"])
 app.include_router(hotspots_router,      prefix="/api/v1",               tags=["Hotspots"])
+app.include_router(burn_scars_router,    prefix="/api/v1",               tags=["Burn Scars"])
 app.include_router(tiles_router,         prefix="/api/v1",               tags=["Tiles"])
 
 @app.get("/api/v1/health", tags=["Health"])

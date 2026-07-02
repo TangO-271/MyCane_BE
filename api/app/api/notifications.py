@@ -9,6 +9,7 @@ from app.models.domain import User, Notification
 from app.schemas.domain import NotificationResponse
 from app.services.dispatch import dispatch_to_channels
 from app.services.alert_engine import run_alert_scan
+from app.services.notification_cleanup import purge_stale_notifications
 
 from app.docs.descriptions import NOTIFICATION_SEND_DESC
 
@@ -188,3 +189,26 @@ def delete_notification(
 def trigger_alert_scan(current_user: User = Depends(get_current_user)):
     """Manually trigger the alert engine (the same job the scheduler runs hourly)."""
     return run_alert_scan()
+
+
+@router.post(
+    "/purge-stale",
+    status_code=status.HTTP_200_OK,
+    summary="Purge stale notifications (server-side trigger)",
+    description=(
+        "Deletes stale notifications: past a max age, read-and-aged, orphaned (plot "
+        "deleted), condition-resolved (the plot's latest features no longer meet the "
+        "hazard's warn-level condition — e.g. a disease alert after humidity/rain drop), "
+        "and seeded mock rows. Runs on the 30-min scheduler; exposed here for manual/cron "
+        "triggering. Pass ?dry_run=true to preview the counts without deleting."
+    ),
+    responses={
+        status.HTTP_200_OK: {
+            "description": "Purge completed (or previewed).",
+            "content": {"application/json": {"example": {"status": "success", "dry_run": False, "deleted": 20, "by_rule": {"age_cap": 0, "read_aged": 0, "orphaned": 0, "resolved": 0, "mock": 20}}}},
+        },
+    },
+)
+def trigger_purge_stale(dry_run: bool = False, current_user: User = Depends(get_current_user)):
+    """Manually trigger the stale-notification purge (same job the scheduler runs)."""
+    return purge_stale_notifications(dry_run=dry_run)

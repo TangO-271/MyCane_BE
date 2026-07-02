@@ -64,3 +64,12 @@ WIND_ICON_SCALE = 1.0
 # ── Icon target heights (px) — used by assets.load_global_assets ─────────────
 ICON_HEIGHT_STD = 36
 ICON_HEIGHT_CYCLONE = 32
+
+# ── Notification cleanup (stale purge — notification_cleanup.py) ──────────────
+NOTIF_MAX_AGE_DAYS = 30        # hard cap: delete ANY notification older than this
+NOTIF_READ_AGE_DAYS = 7        # delete READ notifications older than this
+NOTIF_ORPHAN_AGE_DAYS = 1      # plot-scoped rows whose plot was deleted (plot_id NULL)
+DROUGHT_SPI_30D = -1.0         # SPI-30d >= this → drought condition resolved (CLAUDE.md: < -1.0 confirms drought)
+# Plot-scoped hazards whose alert is tied to a live per-plot condition. `system`
+# alerts are broadcast/manual and are only purged by age, never by condition.
+PLOT_SCOPED_HAZARDS = ("fire", "disease", "flood", "drought")

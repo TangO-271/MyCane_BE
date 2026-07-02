@@ -30,7 +30,12 @@ class Plot(Base):
     geometry = Column(Geometry(geometry_type='POLYGON', srid=32647))
     image_url = Column(Text, nullable=True)
     crop = Column(String(255), nullable=True)
+    # Location split into อำเภอ (amphoe/district) + จังหวัด (province). `address` is
+    # the legacy single free-text field, kept nullable for backward-compat with rows
+    # written before the split; new writes use amphoe/province.
     address = Column(String(255), nullable=True)
+    amphoe = Column(String(255), nullable=True)
+    province = Column(String(255), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
     owner = relationship("User", back_populates="plots")

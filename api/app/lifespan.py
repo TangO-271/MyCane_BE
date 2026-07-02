@@ -44,6 +44,10 @@ async def lifespan(app: FastAPI):
                 )
                 cur.execute("ALTER TABLE plots ADD COLUMN IF NOT EXISTS crop VARCHAR(255);")
                 cur.execute("ALTER TABLE plots ADD COLUMN IF NOT EXISTS address VARCHAR(255);")
+                # Location split: อำเภอ (amphoe) + จังหวัด (province). Additive — the
+                # legacy `address` column is left in place for older rows.
+                cur.execute("ALTER TABLE plots ADD COLUMN IF NOT EXISTS amphoe VARCHAR(255);")
+                cur.execute("ALTER TABLE plots ADD COLUMN IF NOT EXISTS province VARCHAR(255);")
                 conn.commit()
                 logger.info("✅ Spatial indexes and schema columns verified.")
         finally:

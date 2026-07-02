@@ -153,17 +153,23 @@ class PlotCreate(BaseModel):
         description="Type of crop planted (defaults to 'อ้อย' / sugarcane when omitted)",
         example="อ้อย"
     )
-    address: Optional[str] = Field(
+    amphoe: Optional[str] = Field(
         None,
-        description="Plot location / address",
-        example="อ.เมือง จ.นครสวรรค์"
+        description="อำเภอ (district) of the plot — auto-filled from reverse geocoding",
+        example="เมืองนครสวรรค์"
+    )
+    province: Optional[str] = Field(
+        None,
+        description="จังหวัด (province) of the plot — auto-filled from reverse geocoding",
+        example="นครสวรรค์"
     )
 
 class PlotUpdate(BaseModel):
     plot_name: Optional[str] = Field(None, description="Human-readable nickname/identifier")
     geojson: Optional[Dict[str, Any]] = Field(None, description="Standard GeoJSON Geometry (POLYGON)")
     crop: Optional[str] = Field(None, description="Type of crop planted")
-    address: Optional[str] = Field(None, description="Plot location / address")
+    amphoe: Optional[str] = Field(None, description="อำเภอ (district) of the plot")
+    province: Optional[str] = Field(None, description="จังหวัด (province) of the plot")
 
 class PlotResponse(BaseModel):
     id: int = Field(
@@ -210,12 +216,17 @@ class PlotResponse(BaseModel):
     crop: Optional[str] = Field(
         None,
         description="Type of crop planted",
-        example="ข้าว (นาปี)"
+        example="อ้อย"
     )
-    address: Optional[str] = Field(
+    amphoe: Optional[str] = Field(
         None,
-        description="Plot location / address",
-        example="อ.เมือง จ.นครสวรรค์"
+        description="อำเภอ (district) of the plot",
+        example="เมืองนครสวรรค์"
+    )
+    province: Optional[str] = Field(
+        None,
+        description="จังหวัด (province) of the plot",
+        example="นครสวรรค์"
     )
 
     class Config:

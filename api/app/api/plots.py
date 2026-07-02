@@ -59,7 +59,8 @@ def create_plot(plot: PlotCreate, db: Session = Depends(get_db), current_user: U
             # Sugarcane (อ้อย) is the default crop across all five AOI provinces
             # (CLAUDE.md). Honour a crop the client supplied, else default to อ้อย.
             crop=plot.crop or "อ้อย",
-            address=plot.address,
+            amphoe=plot.amphoe,
+            province=plot.province,
         )
         db.add(new_plot)
         db.commit()
@@ -73,7 +74,8 @@ def create_plot(plot: PlotCreate, db: Session = Depends(get_db), current_user: U
             Plot.area_size,
             Plot.image_url,
             Plot.crop,
-            Plot.address,
+            Plot.amphoe,
+            Plot.province,
             func.ST_AsGeoJSON(func.ST_Transform(Plot.geometry, 4326)).label('geojson')
         ).filter(Plot.id == new_plot.id).first()
 
@@ -84,7 +86,8 @@ def create_plot(plot: PlotCreate, db: Session = Depends(get_db), current_user: U
             area_size=result.area_size,
             image_url=result.image_url,
             crop=result.crop,
-            address=result.address,
+            amphoe=result.amphoe,
+            province=result.province,
             geojson=json.loads(result.geojson)
         )
     except Exception as e:
@@ -122,7 +125,8 @@ def get_plots(db: Session = Depends(get_db), current_user: User = Depends(get_cu
         Plot.area_size, 
         Plot.image_url,
         Plot.crop,
-        Plot.address,
+        Plot.amphoe,
+        Plot.province,
         func.ST_AsGeoJSON(func.ST_Transform(Plot.geometry, 4326)).label('geojson')
     ).filter(Plot.user_id == current_user.id).all()
     
@@ -134,7 +138,8 @@ def get_plots(db: Session = Depends(get_db), current_user: User = Depends(get_cu
             area_size=p.area_size,
             image_url=p.image_url,
             crop=p.crop,
-            address=p.address,
+            amphoe=p.amphoe,
+            province=p.province,
             geojson=json.loads(p.geojson) if p.geojson else {}
         ) for p in plots
     ]
@@ -268,7 +273,8 @@ async def upload_plot_image(
             Plot.area_size,
             Plot.image_url,
             Plot.crop,
-            Plot.address,
+            Plot.amphoe,
+            Plot.province,
             func.ST_AsGeoJSON(func.ST_Transform(Plot.geometry, 4326)).label('geojson')
         ).filter(Plot.id == plot.id).first()
 
@@ -279,7 +285,8 @@ async def upload_plot_image(
             area_size=result.area_size,
             image_url=result.image_url,
             crop=result.crop,
-            address=result.address,
+            amphoe=result.amphoe,
+            province=result.province,
             geojson=json.loads(result.geojson) if result.geojson else {}
         )
     except Exception as e:
@@ -315,8 +322,10 @@ def update_plot(
             plot.plot_name = plot_update.plot_name
         if plot_update.crop is not None:
             plot.crop = plot_update.crop
-        if plot_update.address is not None:
-            plot.address = plot_update.address
+        if plot_update.amphoe is not None:
+            plot.amphoe = plot_update.amphoe
+        if plot_update.province is not None:
+            plot.province = plot_update.province
             
         if plot_update.geojson is not None:
             from sqlalchemy import func
@@ -338,7 +347,8 @@ def update_plot(
             Plot.area_size,
             Plot.image_url,
             Plot.crop,
-            Plot.address,
+            Plot.amphoe,
+            Plot.province,
             func.ST_AsGeoJSON(func.ST_Transform(Plot.geometry, 4326)).label('geojson')
         ).filter(Plot.id == plot.id).first()
         
@@ -349,7 +359,8 @@ def update_plot(
             area_size=result.area_size,
             image_url=result.image_url,
             crop=result.crop,
-            address=result.address,
+            amphoe=result.amphoe,
+            province=result.province,
             geojson=json.loads(result.geojson) if result.geojson else {}
         )
     except Exception as e:

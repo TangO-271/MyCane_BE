@@ -428,7 +428,8 @@ def test_create_plot_sqlalchemy():
     mock_result.area_size = 1500.0
     mock_result.image_url = None
     mock_result.crop = None
-    mock_result.address = None
+    mock_result.amphoe = None
+    mock_result.province = None
     mock_result.geojson = '{"type": "Polygon", "coordinates": [[[100.5, 13.7], [100.6, 13.7], [100.6, 13.8], [100.5, 13.8], [100.5, 13.7]]]}'
 
     mock_db.query.return_value.filter.return_value.first.return_value = mock_result
